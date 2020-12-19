@@ -24,7 +24,8 @@ defmodule S3Streaming.MixProject do
       {:configparser_ex, "~> 4.0.0"},
       {:ex_aws, "~> 2.1"},
       {:ex_aws_s3, "~> 2.0"},
-      {:httpoison, "~> 1.7"}
+      {:httpoison, "~> 1.7"},
+      {:jason, "~> 1.2"}
     ]
   end
 end
