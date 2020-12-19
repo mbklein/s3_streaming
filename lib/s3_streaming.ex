@@ -1,32 +1,30 @@
 defmodule S3Streaming do
   require Logger
 
-  @threads 5
-
-  def hash(bucket, key) do
-    stream(bucket, key)
+  def hash(bucket, key, parallel \\ 5) do
+    stream(bucket, key, parallel)
     |> Enum.reduce(:crypto.hash_init(:sha256), &:crypto.hash_update(&2, &1))
     |> :crypto.hash_final()
     |> Base.encode16()
     |> String.downcase()
   end
 
-  def stream(bucket, key) do
+  def stream(bucket, key, parallel \\ 5) do
     Stream.resource(
-      fn -> first(bucket, key) end,
+      fn -> first(bucket, key, parallel) end,
       fn state -> next(state) end,
       fn _ -> :ok end
     )
   end
 
-  defp first(bucket, key) do
+  defp first(bucket, key, parallel) do
     with parts <- head(bucket, key) |> Map.get("x-amz-mp-parts-count", "1") |> String.to_integer() do
-      {bucket, key, parts, 1}
+      {bucket, key, parallel, parts, 1}
     end
   end
 
-  defp next({bucket, key, parts, low}) when low <= parts do
-    with high <- low + min(@threads - 1, parts - low) do
+  defp next({bucket, key, parallel, parts, low}) when low <= parts do
+    with high <- low + min(parallel - 1, parts - low) do
       Logger.info("Retrieving parts #{low} through #{high}")
 
       chunks =
@@ -40,7 +38,7 @@ defmodule S3Streaming do
         |> Enum.sort_by(fn {partNumber, _} -> partNumber end)
         |> Enum.map(fn {_, chunk} -> chunk.body end)
 
-      {chunks, {bucket, key, parts, high + 1}}
+      {chunks, {bucket, key, parallel, parts, high + 1}}
     end
   end
 

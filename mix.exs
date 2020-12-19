@@ -21,6 +21,7 @@ defmodule S3Streaming.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:benchee, "~> 1.0"},
       {:configparser_ex, "~> 4.0.0"},
       {:ex_aws, "~> 2.1"},
       {:ex_aws_s3, "~> 2.0"},
