@@ -3,6 +3,22 @@ defmodule S3Streaming do
 
   @threads 5
 
+  def hash(bucket, key) do
+    stream(bucket, key)
+    |> Enum.reduce(:crypto.hash_init(:sha256), &:crypto.hash_update(&2, &1))
+    |> :crypto.hash_final()
+    |> Base.encode16()
+    |> String.downcase()
+  end
+
+  def stream(bucket, key) do
+    Stream.resource(
+      fn -> first(bucket, key) end,
+      fn state -> next(state) end,
+      fn _ -> :ok end
+    )
+  end
+
   defp first(bucket, key) do
     with parts <- head(bucket, key) |> Map.get("x-amz-mp-parts-count", "1") |> String.to_integer() do
       {bucket, key, parts, 1}
@@ -22,21 +38,13 @@ defmodule S3Streaming do
         end)
         |> Task.await_many(60000)
         |> Enum.sort_by(fn {partNumber, _} -> partNumber end)
-        |> Enum.map(fn {_, chunk} -> chunk end)
+        |> Enum.map(fn {_, chunk} -> chunk.body end)
 
       {chunks, {bucket, key, parts, high + 1}}
     end
   end
 
   defp next(_), do: {:halt, nil}
-
-  def stream(bucket, key) do
-    Stream.resource(
-      fn -> first(bucket, key) end,
-      fn state -> next(state) end,
-      fn _ -> :ok end
-    )
-  end
 
   def head(bucket, key) do
     with op <- ExAws.S3.head_object(bucket, key),
