@@ -1,64 +1,48 @@
 defmodule S3Streaming do
-  require Logger
+  alias S3Streaming.{AWSStream, Meadow, Multipart}
 
-  def hash(bucket, key, parallel \\ 5) do
-    stream(bucket, key, parallel)
-    |> Enum.reduce(:crypto.hash_init(:sha256), &:crypto.hash_update(&2, &1))
-    |> :crypto.hash_final()
-    |> Base.encode16()
-    |> String.downcase()
+  @files %{
+    "738MB" =>
+      {"meadow-s-ingest", "happiness-1607025377/inu-dil-29dad0e6-d7d6-4c4a-9465-94a21aea60a6.tif"},
+    "113MB" =>
+      {"meadow-s-ingest", "happiness-1607025377/inu-dil-5022f840-b035-4a6b-b484-49a4411924e9.tif"},
+    "54MB" => {"meadow-s-ingest", "happiness-1607025377/BFMF_B34_F16_005_p001.tif"},
+    "4MB" => {"meadow-s-ingest", "happiness-1607025377/Tillie.png"}
+  }
+
+  @chunk_sizes [128, 32, 16]
+  @simultaneous_parts [20, 10, 5, 1]
+
+  def benchmark do
+    all_tests()
+    |> Benchee.run()
   end
 
-  def stream(bucket, key, parallel \\ 5) do
-    Stream.resource(
-      fn -> first(bucket, key, parallel) end,
-      fn state -> next(state) end,
-      fn _ -> :ok end
-    )
+  def all_tests do
+    (aws_stream() ++ multipart() ++ meadow()) |> Enum.into(%{})
   end
 
-  defp first(bucket, key, parallel) do
-    with parts <- head(bucket, key) |> Map.get("x-amz-mp-parts-count", "1") |> String.to_integer() do
-      {bucket, key, parallel, parts, 1}
-    end
+  def aws_stream do
+    Enum.flat_map(@files, fn {label, {bucket, key}} ->
+      Enum.map(@chunk_sizes, fn mb ->
+        {"ExAws.stream!/2: #{mb}MB chunks / #{label} MB file",
+         fn -> AWSStream.hash(bucket, key, mb * 1024 * 1024) end}
+      end)
+    end)
   end
 
-  defp next({bucket, key, parallel, parts, low}) when low <= parts do
-    with high <- low + min(parallel - 1, parts - low) do
-      Logger.info("Retrieving parts #{low} through #{high}")
-
-      chunks =
-        low..high
-        |> Enum.map(fn partNumber ->
-          Task.async(fn ->
-            {partNumber, part(bucket, key, partNumber)}
-          end)
-        end)
-        |> Task.await_many(60000)
-        |> Enum.sort_by(fn {partNumber, _} -> partNumber end)
-        |> Enum.map(fn {_, chunk} -> chunk.body end)
-
-      {chunks, {bucket, key, parallel, parts, high + 1}}
-    end
+  def multipart do
+    Enum.flat_map(@files, fn {label, {bucket, key}} ->
+      Enum.map(@simultaneous_parts, fn parts ->
+        {"Multipart: #{parts} thread(s) / #{label} MB file",
+         fn -> Multipart.hash(bucket, key, parts) end}
+      end)
+    end)
   end
 
-  defp next(_), do: {:halt, nil}
-
-  def head(bucket, key) do
-    with op <- ExAws.S3.head_object(bucket, key),
-         params <- op.params do
-      Map.put(op, :params, Map.put(params, "partNumber", 1))
-    end
-    |> ExAws.request!()
-    |> Map.get(:headers)
-    |> Enum.into(%{})
-  end
-
-  def part(bucket, key, part) do
-    with op <- ExAws.S3.get_object(bucket, key),
-         params <- op.params do
-      Map.put(op, :params, Map.put(params, "partNumber", part))
-    end
-    |> ExAws.request!()
+  def meadow do
+    Enum.map(@files, fn {label, {bucket, key}} ->
+      {"Meadow.Utils.Stream: #{label} MB file", fn -> Meadow.hash(bucket, key) end}
+    end)
   end
 end
