@@ -15,7 +15,7 @@ defmodule S3Streaming do
 
   def benchmark do
     all_tests()
-    |> Benchee.run()
+    |> Benchee.run(inputs: @files)
   end
 
   def all_tests do
@@ -23,26 +23,20 @@ defmodule S3Streaming do
   end
 
   def aws_stream do
-    Enum.flat_map(@files, fn {label, {bucket, key}} ->
-      Enum.map(@chunk_sizes, fn mb ->
-        {"ExAws.stream!/2: #{mb}MB chunks / #{label} MB file",
-         fn -> AWSStream.hash(bucket, key, mb * 1024 * 1024) end}
-      end)
+    Enum.map(@chunk_sizes, fn mb ->
+      {"ExAws.stream!/2: #{mb}MB chunks",
+       fn {bucket, key} -> AWSStream.hash(bucket, key, mb * 1024 * 1024) end}
     end)
   end
 
   def multipart do
-    Enum.flat_map(@files, fn {label, {bucket, key}} ->
-      Enum.map(@simultaneous_parts, fn parts ->
-        {"Multipart: #{parts} thread(s) / #{label} MB file",
-         fn -> Multipart.hash(bucket, key, parts) end}
-      end)
+    Enum.map(@simultaneous_parts, fn parts ->
+      {"Multipart: #{parts} thread(s)",
+       fn {bucket, key} -> Multipart.hash(bucket, key, parts) end}
     end)
   end
 
   def meadow do
-    Enum.map(@files, fn {label, {bucket, key}} ->
-      {"Meadow.Utils.Stream: #{label} MB file", fn -> Meadow.hash(bucket, key) end}
-    end)
+    [{"Meadow.Utils.Stream", fn {bucket, key} -> Meadow.hash(bucket, key) end}]
   end
 end
