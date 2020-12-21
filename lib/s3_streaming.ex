@@ -15,7 +15,7 @@ defmodule S3Streaming do
 
   def benchmark do
     all_tests()
-    |> Benchee.run(inputs: @files)
+    |> Benchee.run(inputs: @files, time: 60)
   end
 
   def all_tests do
